@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import '../services/firebase_service.dart';
+import '../view_models/todo_view_model.dart';
 import '../widgets/custom_input_field.dart';
 
 class LoginView extends StatefulWidget {
-  const LoginView({Key? key}) : super(key: key);
+  const LoginView({super.key});
 
   @override
   State<LoginView> createState() => _LoginViewState();
@@ -13,9 +15,9 @@ class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _firebaseService = FirebaseService();
-  bool _isLoading = false;
-  bool _isSignUp = false;
+  final FirebaseService _firebaseService = Get.find<FirebaseService>();
+  final _isLoading = false.obs;
+  final _isSignUp = false.obs;
 
   @override
   void dispose() {
@@ -27,10 +29,10 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _handleSubmit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    _isLoading.value = true;
 
     try {
-      if (_isSignUp) {
+      if (_isSignUp.value) {
         await _firebaseService.signUp(
           _emailController.text,
           _passwordController.text,
@@ -41,19 +43,22 @@ class _LoginViewState extends State<LoginView> {
           _passwordController.text,
         );
       }
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/todos');
-      }
+
+      // Reinitialize TodoController for the new user
+      final TodoController todoController = Get.find<TodoController>();
+      todoController.reinitialize();
+
+      Get.offAllNamed('/todos');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
+      Get.snackbar(
+        'Error',
+        e.toString(),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.error,
+        colorText: Get.theme.colorScheme.onError,
+      );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      _isLoading.value = false;
     }
   }
 
@@ -69,11 +74,11 @@ class _LoginViewState extends State<LoginView> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  _isSignUp ? 'Create Account' : 'Welcome Back',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
-                ),
+                Obx(() => Text(
+                      _isSignUp.value ? 'Create Account' : 'Welcome Back',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                      textAlign: TextAlign.center,
+                    )),
                 const SizedBox(height: 32),
                 CustomInputField(
                   label: 'Email',
@@ -105,21 +110,25 @@ class _LoginViewState extends State<LoginView> {
                   },
                 ),
                 const SizedBox(height: 32),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _handleSubmit,
-                  child: _isLoading
-                      ? const CircularProgressIndicator()
-                      : Text(_isSignUp ? 'Sign Up' : 'Sign In'),
-                ),
+                Obx(() => ElevatedButton(
+                      onPressed: _isLoading.value ? null : _handleSubmit,
+                      child: _isLoading.value
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(_isSignUp.value ? 'Sign Up' : 'Sign In'),
+                    )),
                 const SizedBox(height: 16),
-                TextButton(
-                  onPressed: _isLoading
-                      ? null
-                      : () => setState(() => _isSignUp = !_isSignUp),
-                  child: Text(_isSignUp
-                      ? 'Already have an account? Sign In'
-                      : 'Need an account? Sign Up'),
-                ),
+                Obx(() => TextButton(
+                      onPressed: _isLoading.value
+                          ? null
+                          : () => _isSignUp.value = !_isSignUp.value,
+                      child: Text(_isSignUp.value
+                          ? 'Already have an account? Sign In'
+                          : 'Need an account? Sign Up'),
+                    )),
               ],
             ),
           ),

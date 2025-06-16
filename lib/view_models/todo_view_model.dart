@@ -1,52 +1,68 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'package:get/get.dart';
 import '../models/todo_item.dart';
 import '../services/firebase_service.dart';
 
-class TodoViewModel extends ChangeNotifier {
-  final FirebaseService _firebaseService;
-  List<TodoItem> _todos = [];
-  List<TodoItem> _sharedTodos = [];
-  bool _isLoading = false;
-  String _error = '';
+class TodoController extends GetxController {
+  final FirebaseService _firebaseService = Get.find<FirebaseService>();
 
-  List<TodoItem> get todos => _todos;
-  List<TodoItem> get sharedTodos => _sharedTodos;
-  bool get isLoading => _isLoading;
-  String get error => _error;
+  // Reactive variables
+  final RxList<TodoItem> todos = <TodoItem>[].obs;
+  final RxBool isLoading = false.obs;
+  final RxString error = ''.obs;
 
-  TodoViewModel({required FirebaseService firebaseService})
-      : _firebaseService = firebaseService {
+  StreamSubscription<List<TodoItem>>? _todosSubscription;
+
+  @override
+  void onInit() {
+    super.onInit();
     _loadTodos();
   }
 
-  void _loadTodos() {
-    _firebaseService.getTodosStream().listen(
-      (todos) {
-        _todos = todos;
-        notifyListeners();
-      },
-      onError: (error) {
-        _error = error.toString();
-        notifyListeners();
-      },
-    );
+  @override
+  void onClose() {
+    _todosSubscription?.cancel();
+    super.onClose();
+  }
 
-    _firebaseService.getSharedTodosStream().listen(
-      (todos) {
-        _sharedTodos = todos;
-        notifyListeners();
+  void _loadTodos() {
+    // Cancel previous subscription if exists
+    _todosSubscription?.cancel();
+
+    _todosSubscription = _firebaseService.getTodosStream().listen(
+      (todoList) {
+        todos.value = todoList;
+        error.value = '';
       },
-      onError: (error) {
-        _error = error.toString();
-        notifyListeners();
+      onError: (err) {
+        error.value = err.toString();
+        Get.snackbar(
+          'Error',
+          'Failed to load todos: ${err.toString()}',
+          snackPosition: SnackPosition.BOTTOM,
+        );
       },
     );
+  }
+
+  // Method to clear all data (call on logout)
+  void clearData() {
+    _todosSubscription?.cancel();
+    todos.clear();
+    error.value = '';
+    isLoading.value = false;
+  }
+
+  // Method to reinitialize for new user (call on login)
+  void reinitialize() {
+    clearData();
+    _loadTodos();
   }
 
   Future<void> addTodo(String title, String description) async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      isLoading.value = true;
+      error.value = '';
 
       final todo = TodoItem(
         id: '', // Will be set by Firestore
@@ -56,119 +72,135 @@ class TodoViewModel extends ChangeNotifier {
         createdAt: DateTime.now(),
         ownerId: _firebaseService.currentUser?.uid ?? '',
         ownerEmail: _firebaseService.currentUser?.email ?? '',
-        sharedWith: [],
-        lastModifiedBy: {},
       );
-
-      // Add to local state immediately for better UX
-      final newTodo = todo.copyWith(
-        id: DateTime.now().millisecondsSinceEpoch.toString(), // Temporary ID
-      );
-      _todos.insert(0, newTodo); // Add to the beginning of the list
-      notifyListeners();
 
       await _firebaseService.addTodo(todo);
-      _error = '';
+
+      Get.snackbar(
+        'Success',
+        'Todo added successfully',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.primaryColor,
+        colorText: Get.theme.colorScheme.onPrimary,
+      );
     } catch (e) {
-      // If adding fails, remove from local state
-      _todos.removeWhere(
-          (t) => t.id == DateTime.now().millisecondsSinceEpoch.toString());
-      _error = e.toString();
-      rethrow; // Rethrow to let the UI handle the error
+      error.value = e.toString();
+      Get.snackbar(
+        'Error',
+        'Failed to add todo: ${e.toString()}',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.error,
+        colorText: Get.theme.colorScheme.onError,
+      );
+      rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> editTodo(
+      String todoId, String newTitle, String newDescription) async {
+    try {
+      isLoading.value = true;
+      error.value = '';
+
+      // Find the existing todo
+      final existingTodo = todos.firstWhere((todo) => todo.id == todoId);
+
+      // Create updated todo
+      final updatedTodo = existingTodo.copyWith(
+        title: newTitle,
+        description: newDescription,
+      );
+
+      await _firebaseService.updateTodo(updatedTodo);
+
+      Get.snackbar(
+        'Success',
+        'Todo updated successfully',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.primaryColor,
+        colorText: Get.theme.colorScheme.onPrimary,
+      );
+    } catch (e) {
+      error.value = e.toString();
+      Get.snackbar(
+        'Error',
+        'Failed to update todo: ${e.toString()}',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.error,
+        colorText: Get.theme.colorScheme.onError,
+      );
+      rethrow;
+    } finally {
+      isLoading.value = false;
     }
   }
 
   Future<void> updateTodo(TodoItem todo) async {
     try {
-      _isLoading = true;
-      notifyListeners();
+      isLoading.value = true;
+      error.value = '';
 
       await _firebaseService.updateTodo(todo);
-      _error = '';
+
+      Get.snackbar(
+        'Success',
+        'Todo updated successfully',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.primaryColor,
+        colorText: Get.theme.colorScheme.onPrimary,
+      );
     } catch (e) {
-      _error = e.toString();
+      error.value = e.toString();
+      Get.snackbar(
+        'Error',
+        'Failed to update todo: ${e.toString()}',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.error,
+        colorText: Get.theme.colorScheme.onError,
+      );
+      rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      isLoading.value = false;
     }
   }
 
   Future<void> deleteTodo(String todoId) async {
     try {
-      _isLoading = true;
-      notifyListeners();
-
-      // Remove the todo from local state immediately for better UX
-      _todos.removeWhere((todo) => todo.id == todoId);
-      _sharedTodos.removeWhere((todo) => todo.id == todoId);
-      notifyListeners();
+      isLoading.value = true;
+      error.value = '';
 
       await _firebaseService.deleteTodo(todoId);
-      _error = '';
+
+      Get.snackbar(
+        'Success',
+        'Todo deleted successfully',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.primaryColor,
+        colorText: Get.theme.colorScheme.onPrimary,
+      );
     } catch (e) {
-      // If deletion fails, reload todos to ensure consistency
-      _loadTodos();
-      _error = e.toString();
-      rethrow; // Rethrow to let the UI handle the error
+      error.value = e.toString();
+      Get.snackbar(
+        'Error',
+        'Failed to delete todo: ${e.toString()}',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Get.theme.colorScheme.error,
+        colorText: Get.theme.colorScheme.onError,
+      );
+      rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> shareTodo(String todoId, String userEmail) async {
-    try {
-      _isLoading = true;
-      notifyListeners();
-
-      await _firebaseService.shareTodo(todoId, userEmail);
-      _error = '';
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> removeShare(String todoId, String userId) async {
-    try {
-      _isLoading = true;
-      notifyListeners();
-
-      await _firebaseService.removeShare(todoId, userId);
-      _error = '';
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      isLoading.value = false;
     }
   }
 
   void clearError() {
-    _error = '';
-    notifyListeners();
+    error.value = '';
   }
 
-  String? getLastModifiedInfo(TodoItem todo) {
-    if (todo.lastModifiedBy.isEmpty) return null;
-
-    final email = todo.lastModifiedBy['email'];
-    final timestamp = todo.lastModifiedBy['timestamp'];
-    final action = todo.lastModifiedBy['action'];
-
-    if (email == null || timestamp == null) return null;
-
-    final date = (timestamp as DateTime).toLocal();
-    final timeStr = '${date.hour}:${date.minute}';
-
-    if (action != null) {
-      return '$email $action at $timeStr';
-    }
-    return '$email modified at $timeStr';
+  void toggleTodoComplete(TodoItem todo) {
+    final updatedTodo = todo.copyWith(isCompleted: !todo.isCompleted);
+    updateTodo(updatedTodo);
   }
 }

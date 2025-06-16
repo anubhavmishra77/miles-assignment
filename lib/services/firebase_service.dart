@@ -43,31 +43,24 @@ class FirebaseService {
     await _auth.signOut();
   }
 
-  // Stream of todos for the current user (both owned and shared)
+  // Stream of todos for the current user only
   Stream<List<TodoItem>> getTodosStream() {
     final userId = currentUser?.uid;
-    if (userId == null) return Stream.value([]);
+    if (userId == null) {
+      return Stream.value([]);
+    }
 
     return _firestore
         .collection('todos')
         .where('ownerId', isEqualTo: userId)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => TodoItem.fromFirestore(doc)).toList();
-    });
-  }
-
-  // Stream of shared todos
-  Stream<List<TodoItem>> getSharedTodosStream() {
-    final userId = currentUser?.uid;
-    if (userId == null) return Stream.value([]);
-
-    return _firestore
-        .collection('todos')
-        .where('sharedWith', arrayContains: userId)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => TodoItem.fromFirestore(doc)).toList();
+      final todos = snapshot.docs.map((doc) {
+        return TodoItem.fromFirestore(doc);
+      }).toList();
+      return todos;
+    }).handleError((error) {
+      throw error;
     });
   }
 
@@ -75,16 +68,13 @@ class FirebaseService {
   Future<void> addTodo(TodoItem todo) async {
     if (currentUser == null) throw Exception('User not authenticated');
 
-    final todoData = todo.toMap();
-    todoData['ownerId'] = currentUser!.uid;
-    todoData['ownerEmail'] = currentUser!.email;
-    todoData['createdAt'] = FieldValue.serverTimestamp();
-    todoData['sharedWith'] = [];
-    todoData['lastModifiedBy'] = {
-      'userId': currentUser!.uid,
-      'email': currentUser!.email,
-      'timestamp': FieldValue.serverTimestamp(),
-      'action': 'created',
+    final todoData = {
+      'title': todo.title,
+      'description': todo.description,
+      'isCompleted': todo.isCompleted,
+      'ownerId': currentUser!.uid,
+      'ownerEmail': currentUser!.email ?? '',
+      'createdAt': FieldValue.serverTimestamp(),
     };
 
     await _firestore.collection('todos').add(todoData);
@@ -99,21 +89,18 @@ class FirebaseService {
 
     if (!todoDoc.exists) throw Exception('Todo not found');
 
-    // Check if user has permission to update
+    // Check if user owns this todo
     final data = todoDoc.data() as Map<String, dynamic>;
-    final isOwner = data['ownerId'] == currentUser!.uid;
-    final isShared = (data['sharedWith'] as List).contains(currentUser!.uid);
-
-    if (!isOwner && !isShared) {
-      throw Exception('You do not have permission to update this todo');
+    if (data['ownerId'] != currentUser!.uid) {
+      throw Exception('You can only update your own todos');
     }
 
-    // Update with last modified information
-    final updateData = todo.toMap();
-    updateData['lastModifiedBy'] = {
-      'userId': currentUser!.uid,
-      'email': currentUser!.email,
-      'timestamp': FieldValue.serverTimestamp(),
+    final updateData = {
+      'title': todo.title,
+      'description': todo.description,
+      'isCompleted': todo.isCompleted,
+      'ownerId': todo.ownerId,
+      'ownerEmail': todo.ownerEmail,
     };
 
     await todoRef.update(updateData);
@@ -128,91 +115,12 @@ class FirebaseService {
 
     if (!todoDoc.exists) throw Exception('Todo not found');
 
-    // Only owner can delete
+    // Check if user owns this todo
     final data = todoDoc.data() as Map<String, dynamic>;
     if (data['ownerId'] != currentUser!.uid) {
-      throw Exception('Only the owner can delete this todo');
+      throw Exception('You can only delete your own todos');
     }
 
     await todoRef.delete();
-  }
-
-  // Share todo with user
-  Future<void> shareTodo(String todoId, String userEmail) async {
-    if (currentUser == null) throw Exception('User not authenticated');
-
-    // Find user by email
-    final userQuery = await _firestore
-        .collection('users')
-        .where('email', isEqualTo: userEmail)
-        .get();
-
-    if (userQuery.docs.isEmpty) {
-      throw Exception('User not found');
-    }
-
-    final targetUserId = userQuery.docs.first.id;
-    final todoRef = _firestore.collection('todos').doc(todoId);
-    final todoDoc = await todoRef.get();
-
-    if (!todoDoc.exists) {
-      throw Exception('Todo not found');
-    }
-
-    final data = todoDoc.data() as Map<String, dynamic>;
-
-    // Check if user is already shared
-    final sharedWith = List<String>.from(data['sharedWith'] ?? []);
-    if (sharedWith.contains(targetUserId)) {
-      throw Exception('Todo is already shared with this user');
-    }
-
-    // Only owner can share
-    if (data['ownerId'] != currentUser!.uid) {
-      throw Exception('Only the owner can share this todo');
-    }
-
-    sharedWith.add(targetUserId);
-    await todoRef.update({
-      'sharedWith': sharedWith,
-      'lastModifiedBy': {
-        'userId': currentUser!.uid,
-        'email': currentUser!.email,
-        'timestamp': FieldValue.serverTimestamp(),
-        'action': 'shared',
-      },
-    });
-  }
-
-  // Remove share from todo
-  Future<void> removeShare(String todoId, String userId) async {
-    if (currentUser == null) throw Exception('User not authenticated');
-
-    final todoRef = _firestore.collection('todos').doc(todoId);
-    final todoDoc = await todoRef.get();
-
-    if (!todoDoc.exists) {
-      throw Exception('Todo not found');
-    }
-
-    final data = todoDoc.data() as Map<String, dynamic>;
-
-    // Only owner can remove share
-    if (data['ownerId'] != currentUser!.uid) {
-      throw Exception('Only the owner can remove shares');
-    }
-
-    final sharedWith = List<String>.from(data['sharedWith'] ?? []);
-    sharedWith.remove(userId);
-
-    await todoRef.update({
-      'sharedWith': sharedWith,
-      'lastModifiedBy': {
-        'userId': currentUser!.uid,
-        'email': currentUser!.email,
-        'timestamp': FieldValue.serverTimestamp(),
-        'action': 'unshared',
-      },
-    });
   }
 }

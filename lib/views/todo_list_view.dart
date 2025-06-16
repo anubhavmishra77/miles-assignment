@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:get/get.dart';
 import '../view_models/todo_view_model.dart';
-import '../widgets/todo_item_widget.dart';
-import '../widgets/custom_input_field.dart';
-import '../models/todo_item.dart';
 import '../services/firebase_service.dart';
+import '../widgets/custom_input_field.dart';
+import '../widgets/todo_item_widget.dart';
+import '../models/todo_item.dart';
 
 class TodoListView extends StatefulWidget {
-  const TodoListView({Key? key}) : super(key: key);
+  const TodoListView({super.key});
 
   @override
   State<TodoListView> createState() => _TodoListViewState();
@@ -17,7 +17,10 @@ class _TodoListViewState extends State<TodoListView> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  bool _showAddTodo = false;
+  final _showAddTodo = false.obs;
+
+  final TodoController todoController = Get.find<TodoController>();
+  final FirebaseService firebaseService = Get.find<FirebaseService>();
 
   @override
   void dispose() {
@@ -26,67 +29,97 @@ class _TodoListViewState extends State<TodoListView> {
     super.dispose();
   }
 
-  void _showShareDialog(TodoItem todo) {
-    final emailController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Share Todo'),
-        content: CustomInputField(
-          label: 'Email',
-          hint: 'Enter email address',
-          controller: emailController,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter an email address';
-            }
-            return null;
-          },
+  Future<void> _handleLogout() async {
+    // Clear the todo data before logging out
+    todoController.clearData();
+
+    await firebaseService.signOut();
+    Get.offAllNamed('/');
+  }
+
+  Future<void> _handleEdit(TodoItem todo) async {
+    final titleController = TextEditingController(text: todo.title);
+    final descriptionController = TextEditingController(text: todo.description);
+    final formKey = GlobalKey<FormState>();
+
+    final result = await Get.dialog<bool>(
+      AlertDialog(
+        title: const Text('Edit Todo'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CustomInputField(
+                label: 'Title',
+                hint: 'Enter todo title',
+                controller: titleController,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter a title';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              CustomInputField(
+                label: 'Description',
+                hint: 'Enter todo description',
+                controller: descriptionController,
+                isMultiline: true,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              titleController.dispose();
+              descriptionController.dispose();
+              Get.back(result: false);
+            },
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
-              if (emailController.text.isNotEmpty) {
-                context.read<TodoViewModel>().shareTodo(
-                      todo.id,
-                      emailController.text,
-                    );
-                Navigator.pop(context);
+              if (formKey.currentState!.validate()) {
+                Get.back(result: true);
               }
             },
-            child: const Text('Share'),
+            child: const Text('Save'),
           ),
         ],
       ),
     );
-  }
 
-  Future<void> _handleLogout() async {
-    final firebaseService =
-        Provider.of<FirebaseService>(context, listen: false);
-    await firebaseService.signOut();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/');
+    if (result == true) {
+      try {
+        await todoController.editTodo(
+          todo.id,
+          titleController.text,
+          descriptionController.text,
+        );
+      } catch (e) {
+        // Error handling is done in the controller
+      }
     }
+
+    titleController.dispose();
+    descriptionController.dispose();
   }
 
   Future<void> _handleDelete(TodoItem todo) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
+    final confirmed = await Get.dialog<bool>(
+      AlertDialog(
         title: const Text('Delete Todo'),
         content: const Text('Are you sure you want to delete this todo?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Get.back(result: false),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Get.back(result: true),
             child: const Text('Delete'),
           ),
         ],
@@ -95,36 +128,20 @@ class _TodoListViewState extends State<TodoListView> {
 
     if (confirmed == true) {
       try {
-        await context.read<TodoViewModel>().deleteTodo(todo.id);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Todo deleted successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        await todoController.deleteTodo(todo.id);
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to delete todo: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        // Error handling is done in the controller
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final firebaseService = Provider.of<FirebaseService>(context);
     final userEmail = firebaseService.currentUser?.email ?? '';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Shared Todo App'),
+        title: const Text('My Todos'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           Padding(
@@ -136,10 +153,10 @@ class _TodoListViewState extends State<TodoListView> {
               ),
             ),
           ),
-          IconButton(
-            icon: Icon(_showAddTodo ? Icons.close : Icons.add),
-            onPressed: () => setState(() => _showAddTodo = !_showAddTodo),
-          ),
+          Obx(() => IconButton(
+                icon: Icon(_showAddTodo.value ? Icons.close : Icons.add),
+                onPressed: () => _showAddTodo.value = !_showAddTodo.value,
+              )),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -147,115 +164,105 @@ class _TodoListViewState extends State<TodoListView> {
           ),
         ],
       ),
-      body: Consumer<TodoViewModel>(
-        builder: (context, viewModel, child) {
-          if (viewModel.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          // Combine owned and shared todos
-          final allTodos = [
-            ...viewModel.todos.map((todo) => todo.copyWith(isOwned: true)),
-            ...viewModel.sharedTodos
-                .map((todo) => todo.copyWith(isOwned: false)),
-          ];
-
-          return Column(
-            children: [
-              if (_showAddTodo)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        CustomInputField(
-                          label: 'Title',
-                          hint: 'Enter todo title',
-                          controller: _titleController,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter a title';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        CustomInputField(
-                          label: 'Description',
-                          hint: 'Enter todo description',
-                          controller: _descriptionController,
-                          isMultiline: true,
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () async {
-                            if (_formKey.currentState!.validate()) {
-                              try {
-                                await viewModel.addTodo(
-                                  _titleController.text,
-                                  _descriptionController.text,
-                                );
-                                _titleController.clear();
-                                _descriptionController.clear();
-                                setState(() => _showAddTodo = false);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Todo added successfully'),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Failed to add todo: ${e.toString()}'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            }
-                          },
-                          child: const Text('Add Todo'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              Expanded(
-                child: _buildTodoList(allTodos),
-              ),
-            ],
-          );
-        },
+      body: Column(
+        children: [
+          Obx(() => _showAddTodo.value
+              ? _buildAddTodoForm()
+              : const SizedBox.shrink()),
+          Expanded(
+            child: Obx(() => _buildTodoList()),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTodoList(List<TodoItem> todos) {
-    if (todos.isEmpty) {
+  Widget _buildAddTodoForm() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            CustomInputField(
+              label: 'Title',
+              hint: 'Enter todo title',
+              controller: _titleController,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a title';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            CustomInputField(
+              label: 'Description',
+              hint: 'Enter todo description',
+              controller: _descriptionController,
+              isMultiline: true,
+            ),
+            const SizedBox(height: 16),
+            Obx(() => ElevatedButton(
+                  onPressed: todoController.isLoading.value
+                      ? null
+                      : () async {
+                          if (_formKey.currentState!.validate()) {
+                            try {
+                              await todoController.addTodo(
+                                _titleController.text,
+                                _descriptionController.text,
+                              );
+                              _titleController.clear();
+                              _descriptionController.clear();
+                              _showAddTodo.value = false;
+                            } catch (e) {
+                              // Error handling is done in the controller
+                            }
+                          }
+                        },
+                  child: todoController.isLoading.value
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add Todo'),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodoList() {
+    if (todoController.isLoading.value && todoController.todos.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (todoController.todos.isEmpty) {
       return const Center(
         child: Text('No todos yet. Add one to get started!'),
       );
     }
 
-    return ListView.builder(
-      itemCount: todos.length,
-      itemBuilder: (context, index) {
-        final todo = todos[index];
-        return TodoItemWidget(
-          todo: todo,
-          onDelete: todo.isOwned ? () => _handleDelete(todo) : null,
-          onToggleComplete: (value) => context.read<TodoViewModel>().updateTodo(
-                todo.copyWith(isCompleted: value),
-              ),
-          onShare: todo.isOwned ? () => _showShareDialog(todo) : null,
-        );
+    return RefreshIndicator(
+      onRefresh: () async {
+        // The stream will automatically refresh
       },
+      child: ListView.builder(
+        itemCount: todoController.todos.length,
+        itemBuilder: (context, index) {
+          final todo = todoController.todos[index];
+          return TodoItemWidget(
+            todo: todo,
+            onDelete: () => _handleDelete(todo),
+            onToggleComplete: (value) =>
+                todoController.toggleTodoComplete(todo),
+            onEdit: () => _handleEdit(todo),
+          );
+        },
+      ),
     );
   }
 }
