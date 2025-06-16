@@ -8,13 +8,13 @@ class CustomInputField extends StatelessWidget {
   final bool isMultiline;
 
   const CustomInputField({
-    Key? key,
+    super.key,
     required this.label,
     required this.hint,
     required this.controller,
     this.validator,
     this.isMultiline = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
