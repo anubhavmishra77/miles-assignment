@@ -44,7 +44,6 @@ class _LoginViewState extends State<LoginView> {
         );
       }
 
-      // Reinitialize TodoController for the new user
       final TodoController todoController = Get.find<TodoController>();
       todoController.reinitialize();
 

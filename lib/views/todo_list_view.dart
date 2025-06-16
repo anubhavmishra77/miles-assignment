@@ -30,7 +30,6 @@ class _TodoListViewState extends State<TodoListView> {
   }
 
   Future<void> _handleLogout() async {
-    // Clear the todo data before logging out
     todoController.clearData();
 
     await firebaseService.signOut();
@@ -99,9 +98,7 @@ class _TodoListViewState extends State<TodoListView> {
           titleController.text,
           descriptionController.text,
         );
-      } catch (e) {
-        // Error handling is done in the controller
-      }
+      } catch (e) {}
     }
 
     titleController.dispose();
@@ -129,9 +126,7 @@ class _TodoListViewState extends State<TodoListView> {
     if (confirmed == true) {
       try {
         await todoController.deleteTodo(todo.id);
-      } catch (e) {
-        // Error handling is done in the controller
-      }
+      } catch (e) {}
     }
   }
 
@@ -216,9 +211,7 @@ class _TodoListViewState extends State<TodoListView> {
                               _titleController.clear();
                               _descriptionController.clear();
                               _showAddTodo.value = false;
-                            } catch (e) {
-                              // Error handling is done in the controller
-                            }
+                            } catch (e) {}
                           }
                         },
                   child: todoController.isLoading.value
@@ -247,9 +240,7 @@ class _TodoListViewState extends State<TodoListView> {
     }
 
     return RefreshIndicator(
-      onRefresh: () async {
-        // The stream will automatically refresh
-      },
+      onRefresh: () async {},
       child: ListView.builder(
         itemCount: todoController.todos.length,
         itemBuilder: (context, index) {

@@ -8,7 +8,6 @@ class FirebaseService {
 
   User? get currentUser => _auth.currentUser;
 
-  // Authentication methods
   Future<UserCredential> signUp(String email, String password) async {
     try {
       UserCredential credential = await _auth.createUserWithEmailAndPassword(
@@ -16,7 +15,6 @@ class FirebaseService {
         password: password,
       );
 
-      // Create a user document in Firestore
       await _firestore.collection('users').doc(credential.user!.uid).set({
         'email': email,
         'createdAt': FieldValue.serverTimestamp(),
@@ -43,7 +41,6 @@ class FirebaseService {
     await _auth.signOut();
   }
 
-  // Stream of todos for the current user only
   Stream<List<TodoItem>> getTodosStream() {
     final userId = currentUser?.uid;
     if (userId == null) {
@@ -64,7 +61,6 @@ class FirebaseService {
     });
   }
 
-  // Add new todo
   Future<void> addTodo(TodoItem todo) async {
     if (currentUser == null) throw Exception('User not authenticated');
 
@@ -80,7 +76,6 @@ class FirebaseService {
     await _firestore.collection('todos').add(todoData);
   }
 
-  // Update todo
   Future<void> updateTodo(TodoItem todo) async {
     if (currentUser == null) throw Exception('User not authenticated');
 
@@ -89,7 +84,6 @@ class FirebaseService {
 
     if (!todoDoc.exists) throw Exception('Todo not found');
 
-    // Check if user owns this todo
     final data = todoDoc.data() as Map<String, dynamic>;
     if (data['ownerId'] != currentUser!.uid) {
       throw Exception('You can only update your own todos');
@@ -106,7 +100,6 @@ class FirebaseService {
     await todoRef.update(updateData);
   }
 
-  // Delete todo
   Future<void> deleteTodo(String todoId) async {
     if (currentUser == null) throw Exception('User not authenticated');
 
@@ -115,7 +108,6 @@ class FirebaseService {
 
     if (!todoDoc.exists) throw Exception('Todo not found');
 
-    // Check if user owns this todo
     final data = todoDoc.data() as Map<String, dynamic>;
     if (data['ownerId'] != currentUser!.uid) {
       throw Exception('You can only delete your own todos');

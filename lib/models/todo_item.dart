@@ -22,12 +22,10 @@ class TodoItem {
   factory TodoItem.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
-    // Handle null timestamp gracefully
     DateTime createdAt;
     if (data['createdAt'] != null) {
       createdAt = (data['createdAt'] as Timestamp).toDate();
     } else {
-      // Fallback to current time if timestamp is null
       createdAt = DateTime.now();
     }
 

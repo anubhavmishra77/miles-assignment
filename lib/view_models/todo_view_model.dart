@@ -6,7 +6,6 @@ import '../services/firebase_service.dart';
 class TodoController extends GetxController {
   final FirebaseService _firebaseService = Get.find<FirebaseService>();
 
-  // Reactive variables
   final RxList<TodoItem> todos = <TodoItem>[].obs;
   final RxBool isLoading = false.obs;
   final RxString error = ''.obs;
@@ -26,7 +25,6 @@ class TodoController extends GetxController {
   }
 
   void _loadTodos() {
-    // Cancel previous subscription if exists
     _todosSubscription?.cancel();
 
     _todosSubscription = _firebaseService.getTodosStream().listen(
@@ -45,7 +43,6 @@ class TodoController extends GetxController {
     );
   }
 
-  // Method to clear all data (call on logout)
   void clearData() {
     _todosSubscription?.cancel();
     todos.clear();
@@ -53,7 +50,6 @@ class TodoController extends GetxController {
     isLoading.value = false;
   }
 
-  // Method to reinitialize for new user (call on login)
   void reinitialize() {
     clearData();
     _loadTodos();
@@ -65,7 +61,7 @@ class TodoController extends GetxController {
       error.value = '';
 
       final todo = TodoItem(
-        id: '', // Will be set by Firestore
+        id: '',
         title: title,
         description: description,
         isCompleted: false,
@@ -104,10 +100,8 @@ class TodoController extends GetxController {
       isLoading.value = true;
       error.value = '';
 
-      // Find the existing todo
       final existingTodo = todos.firstWhere((todo) => todo.id == todoId);
 
-      // Create updated todo
       final updatedTodo = existingTodo.copyWith(
         title: newTitle,
         description: newDescription,

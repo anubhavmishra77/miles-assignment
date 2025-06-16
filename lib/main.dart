@@ -20,7 +20,6 @@ void main() async {
     ),
   );
 
-  // Initialize GetX dependencies
   Get.put(FirebaseService());
   Get.put(TodoController());
 
